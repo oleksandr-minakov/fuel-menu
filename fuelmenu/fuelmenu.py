@@ -14,7 +14,6 @@
 # under the License.
 
 from __future__ import absolute_import
-
 from fuelmenu.common import dialog
 from fuelmenu.common import errors
 from fuelmenu.common import network
@@ -22,9 +21,7 @@ from fuelmenu.common import timeout
 from fuelmenu.common import urwidwrapper as widget
 from fuelmenu.common import utils
 from fuelmenu import consts
-from fuelmenu import settings as settings_module
-
-
+from fuelmenu.settings import Settings
 import logging
 import operator
 from optparse import OptionParser
@@ -86,22 +83,13 @@ class FuelSetup(object):
         self.footer = None
         self.frame = None
         self.screen = None
+        self.defaultsettingsfile = os.path.join(os.path.dirname(__file__),
+                                                "settings.yaml")
+        self.settingsfile = consts.SETTINGS_FILE
         self.managediface = network.get_physical_ifaces()[0]
         # Set to true to move all settings to end
         self.globalsave = True
         self.version = utils.get_fuel_version()
-
-        # settings load
-        self.settings = settings_module.Settings()
-
-        self.settings.load(
-            os.path.join(os.path.dirname(__file__), "settings.yaml"),
-            template_kwargs={"mos_version": self.version})
-
-        self.settings.load(
-            consts.SETTINGS_FILE,
-            template_kwargs={"mos_version": self.version})
-
         self.main()
         self.choices = []
 
@@ -159,6 +147,13 @@ class FuelSetup(object):
     def refreshScreen(self):
         size = self.screen.get_cols_rows()
         self.screen.draw_screen(size, self.frame.render(size))
+
+    def refreshChildScreen(self, name):
+        child = self.children[int(self.choices.index(name))]
+
+        child.screen = child.screenUI()
+
+        self.draw_child_screen(child.screen)
 
     def main(self):
         text_header = (u"Fuel %s setup "
@@ -309,18 +304,7 @@ class FuelSetup(object):
                 except AttributeError as e:
                     log.debug("Module %s does not have save function: %s"
                               % (modulename, e))
-
-        self.settings.write(outfn=consts.SETTINGS_FILE)
         return True, None
-
-    def reload_modules(self):
-        for child in self.children:
-            if hasattr(child, 'load') and callable(child.load):
-                child.load()
-                child.screen = child.screenUI()
-                self.draw_child_screen(child.screen)
-
-        self.refreshScreen()
 
 
 def setup():
@@ -386,15 +370,12 @@ def save_only(iface, settingsfile=consts.SETTINGS_FILE):
     default_settings_file = os.path.join(os.path.dirname(__file__),
                                          "settings.yaml")
     mos_version = utils.get_fuel_version()
-
-    settings = settings_module.Settings()
-
-    settings.load(
+    settings = Settings().read(
         default_settings_file,
         template_kwargs={"mos_version": mos_version})
-
-    settings.load(settingsfile, template_kwargs={"mos_version": mos_version})
-
+    settings.update(Settings().read(
+        settingsfile,
+        template_kwargs={"mos_version": mos_version}))
     settings_upd = \
         {
             "ADMIN_NETWORK/interface": iface,
@@ -448,7 +429,8 @@ def save_only(iface, settingsfile=consts.SETTINGS_FILE):
                 settings[setting] = settings_upd[setting]
 
     # Write astute.yaml
-    settings.write(outfn=settingsfile)
+    Settings().write(settings, defaultsfile=default_settings_file,
+                     outfn=settingsfile)
 
 
 def main(*args, **kwargs):

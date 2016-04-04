@@ -13,6 +13,7 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+import collections
 import logging
 import os
 
@@ -77,8 +78,9 @@ class restore(urwid.WidgetWrap):
                                "(Use 'Shell Login' if you want fetch "
                                "settings manually from a remote host and then "
                                "return to this menu to restore them.)",
-                               "",
-                               "Attention! All unsaved settings will be lost."]
+                               "NOTE: After restoring settings in this "
+                               "section, please exit from the menu without "
+                               "saving changes."]
         self.fields = ["PATH"]
         self.defaults = {
             "PATH": {
@@ -89,7 +91,7 @@ class restore(urwid.WidgetWrap):
             },
         }
 
-        self.load()
+        self.oldsettings = self.load()
 
     def cancel(self, button):
         helper.ModuleHelper.cancel(self, button)
@@ -99,7 +101,7 @@ class restore(urwid.WidgetWrap):
 
     def check_settings(self, settings):
         required_keys = []
-        responses = settings_utils.Settings()
+        responses = collections.OrderedDict()
         for key, subkeys in KEYS_TO_RESTORE:
             if key not in settings:
                 if subkeys:
@@ -137,8 +139,8 @@ class restore(urwid.WidgetWrap):
 
         path = os.path.abspath(path)
         try:
-            settings = settings_utils.Settings()
-            settings.load(path)
+            with open(path) as f:
+                settings = yaml.load(f)
         except IOError as err:
             self.show_error_msg("Could not fetch settings: {0}".format(err),
                                 exc_info=True)
@@ -175,16 +177,26 @@ class restore(urwid.WidgetWrap):
             return False
         self.parent.footer.set_text("Applying changes...")
         self.save(responses)
-        self.parent.reload_modules()
-        self.parent.footer.set_text("Setings restored successfully.")
+        self.parent.footer.set_text("Changes saved successfully.")
         return True
 
     def load(self):
-        helper.ModuleHelper.load_to_defaults(
-            self.parent.settings, self.defaults, ignoredparams=('PATH',))
+        return helper.ModuleHelper.load(self, ignoredparams=('PATH',))
 
     def save(self, responses):
-        self.parent.settings.merge(responses)
+        newsettings = helper.ModuleHelper.save(self, responses)
+        # TODO(akscram): The restore module writes settings itself into
+        #                the configuration file and requires from the
+        #                user to exit from the menu without saving
+        #                changes. It is a necessary requirement due to
+        #                the limitations of fuel menu. For more
+        #                information see the bug report
+        #                https://bugs.launchpad.net/fuel/+bug/1527111.
+        settings_utils.Settings().write(
+            newsettings,
+            defaultsfile=self.parent.defaultsettingsfile,
+            outfn=self.parent.settingsfile)
+        self.oldsettings = newsettings
 
     def screenUI(self):
         return helper.ModuleHelper.screenUI(

@@ -13,7 +13,14 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+try:
+    from collections import OrderedDict
+except Exception:
+    # python 2.6 or earlier use backport
+    from ordereddict import OrderedDict
+
 from fuelmenu.common.modulehelper import ModuleHelper
+from fuelmenu.settings import Settings
 import logging
 import re
 import urwid
@@ -51,7 +58,7 @@ class fueluser(urwid.WidgetWrap):
                                      "value": ""},
             }
 
-        self.load()
+        self.oldsettings = self.load()
         self.screen = None
 
     def check(self, args):
@@ -132,18 +139,33 @@ class fueluser(urwid.WidgetWrap):
         return True
 
     def save(self, responses):
-        newsettings = ModuleHelper.make_settings_from_responses(responses)
-        self.parent.settings.merge(newsettings)
+        # Generic settings start
+        newsettings = OrderedDict()
+        for setting in responses.keys():
+            if "/" in setting:
+                part1, part2 = setting.split("/")
+                if part1 not in newsettings:
+                    # We may not touch all settings, so copy oldsettings first
+                    try:
+                        newsettings[part1] = self.oldsettings[part1]
+                    except Exception:
+                        if part1 not in newsettings.keys():
+                            newsettings[part1] = OrderedDict()
+                        log.warning("issues setting newsettings %s " % setting)
+                        log.warning("current newsettings: %s" % newsettings)
+                newsettings[part1][part2] = responses[setting]
+            else:
+                newsettings[setting] = responses[setting]
+        Settings().write(newsettings,
+                         defaultsfile=self.parent.defaultsettingsfile,
+                         outfn=self.parent.settingsfile)
 
         self.parent.footer.set_text("Changes applied successfully.")
         # Reset fields
         self.cancel(None)
 
     def load(self):
-        ModuleHelper.load_to_defaults(
-            self.parent.settings,
-            self.defaults,
-            ignoredparams=['CONFIRM_PASSWORD'])
+        return ModuleHelper.load(self, ignoredparams=['CONFIRM_PASSWORD'])
 
     def cancel(self, button):
         ModuleHelper.cancel(self, button)

@@ -18,6 +18,7 @@ from fuelmenu.common.modulehelper import ModuleHelper
 from fuelmenu.common.modulehelper import WidgetType
 import fuelmenu.common.urwidwrapper as widget
 from fuelmenu.common import utils
+from fuelmenu.settings import Settings
 import logging
 import re
 import urwid
@@ -62,7 +63,7 @@ class ntpsetup(urwid.WidgetWrap):
         # Load info
         self.gateway = self.get_default_gateway_linux()
 
-        self.load()
+        self.oldsettings = self.load()
         self.screen = None
 
     def check(self, args):
@@ -175,18 +176,32 @@ class ntpsetup(urwid.WidgetWrap):
         return ModuleHelper.get_default_gateway_linux()
 
     def load(self):
-        ModuleHelper.load_to_defaults(
-            self.parent.settings, self.defaults, ignoredparams=['ntpenabled'])
+        return ModuleHelper.load(self, ignoredparams=['ntpenabled'])
 
     def save(self, responses):
-        settings = self.parent.settings
-        newsettings = ModuleHelper.make_settings_from_responses(responses)
-        settings.merge(newsettings)
+        # Generic settings start
+        newsettings = dict()
+        for setting in responses.keys():
+            if "/" in setting:
+                part1, part2 = setting.split("/")
+                if part1 not in newsettings:
+                    # We may not touch all settings, so copy oldsettings first
+                    newsettings[part1] = self.oldsettings[part1]
+                newsettings[part1][part2] = responses[setting]
+            else:
+                newsettings[setting] = responses[setting]
+        # Generic settings end
 
+        Settings().write(newsettings,
+                         defaultsfile=self.parent.defaultsettingsfile,
+                         outfn=self.parent.settingsfile)
+
+        # Set oldsettings to reflect new settings
+        self.oldsettings = newsettings
         # Update defaults
         for index, fieldname in enumerate(self.fields):
-            if fieldname != "blank" and fieldname in settings:
-                self.defaults[fieldname]['value'] = settings[fieldname]
+            if fieldname != "blank" and fieldname in newsettings:
+                self.defaults[fieldname]['value'] = newsettings[fieldname]
 
     def checkNTP(self, server):
         # Use ntpdate to verify server answers NTP requests

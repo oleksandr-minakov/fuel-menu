@@ -16,6 +16,7 @@
 import crypt
 from fuelmenu.common import modulehelper as helper
 from fuelmenu.common import utils
+from fuelmenu import settings as settings_module
 
 import logging
 import urwid
@@ -122,10 +123,13 @@ class rootpw(urwid.WidgetWrap):
         return True
 
     def save_settings(self, hashed_pwd):
-        newsettings = {'BOOTSTRAP': {
-            'hashed_root_password': hashed_pwd,
-        }}
-        self.parent.settings.merge(newsettings)
+        bootstrap = helper.ModuleHelper.load(self)['BOOTSTRAP']
+        bootstrap['hashed_root_password'] = hashed_pwd
+
+        settings_module.Settings().write(
+            {'BOOTSTRAP': bootstrap},
+            defaultsfile=self.parent.defaultsettingsfile,
+            outfn=self.parent.settingsfile)
 
     def cancel(self, button):
         helper.ModuleHelper.cancel(self, button)

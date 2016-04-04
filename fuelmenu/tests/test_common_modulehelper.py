@@ -19,7 +19,6 @@ import netifaces
 import unittest
 
 from fuelmenu.common import modulehelper
-from fuelmenu import settings as settings_module
 
 
 def custom_mock_open(lines):
@@ -82,6 +81,7 @@ class TestModuleHelperGet(TestModuleHelperBase):
                               self.settings, incorrect_key)
 
 
+@mock.patch('fuelmenu.settings.Settings.read', side_effect=lambda x: x)
 @mock.patch('fuelmenu.common.modulehelper.ModuleHelper.get_setting',
             return_value='loaded')
 class TestModuleHelperLoad(TestModuleHelperBase):
@@ -89,8 +89,8 @@ class TestModuleHelperLoad(TestModuleHelperBase):
         super(TestModuleHelperLoad, self).setUp()
         self.modobj.defaults = dict()
         self.modobj.parent = mock.Mock()
-        self.modobj.parent.settings = settings_module.Settings(
-            {'key1': 'value1', 'key2': 'value2'})
+        self.modobj.parent.defaultsettingsfile = {'key1': 'value1'}
+        self.modobj.parent.settingsfile = {'key2': 'value2'}
 
     def test_load_types_skipping(self, *_):
         widget_types = {
@@ -110,7 +110,8 @@ class TestModuleHelperLoad(TestModuleHelperBase):
                 },
             })
 
-        self._run('load_to_defaults', self.modobj, self.modobj.defaults)
+        self._check('load', {'key2': 'value2', 'key1': 'value1'},
+                    self.modobj)
         for _, setting in self.modobj.defaults.items():
             self.assertEqual(
                 widget_types[setting['type']], setting['value'],
@@ -124,8 +125,8 @@ class TestModuleHelperLoad(TestModuleHelperBase):
             3: {'value': 'skipped', 'should': 'skipped'},
         })
         ignores = [1, 3]
-        self._run('load_to_defaults', self.modobj,
-                  self.modobj.defaults, ignores)
+        self._check('load', {'key2': 'value2', 'key1': 'value1'},
+                    self.modobj, ignores)
 
         for _, setting in self.modobj.defaults.items():
             self.assertEqual(setting['value'], setting['should'])
@@ -135,25 +136,32 @@ class TestModuleHelperLoad(TestModuleHelperBase):
             self, m_warning, m_get_setting, *_):
         m_get_setting.side_effect = KeyError
         self.modobj.defaults.update({'key': {'value': ''}})
-        self._run('load_to_defaults', self.modobj, self.modobj.defaults)
+        self._check('load', {'key2': 'value2', 'key1': 'value1'},
+                    self.modobj)
         self.assertEqual(self.modobj.defaults['key']['value'], '')
         m_warning.assert_called_once_with(
             "Failed to load %s value from settings", 'key')
 
+    def test_load_settings(self, *_):
+        self._check('load', {'key1': 'value1', 'key2': 'value2'}, self.modobj)
 
+
+@mock.patch('fuelmenu.common.modulehelper.ModuleHelper.set_setting',
+            return_value='')
 class TestModuleHelperSave(TestModuleHelperBase):
     def setUp(self):
         super(TestModuleHelperSave, self).setUp()
         self.modobj.oldsettings = mock.Mock()
 
-    def test_make_settings_from_responses(self):
+    def test_save(self, m_set_setting):
         responses = {
             'key1': 'value1',
-            'key2/key3': 'value2'
+            'key2': 'value2'
         }
-
-        expected = {'key1': 'value1', 'key2': {'key3': 'value2'}}
-        self._check('make_settings_from_responses', expected, responses)
+        self._check('save', {}, self.modobj, responses)
+        for key, value in responses.items():
+            m_set_setting.assert_any_call(
+                {}, key, value, self.modobj.oldsettings)
 
 
 class TestModuleHelperCancel(TestModuleHelperBase):

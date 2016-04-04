@@ -19,6 +19,7 @@ import urwid
 
 from fuelmenu.common.modulehelper import ModuleHelper
 from fuelmenu.common.modulehelper import WidgetType
+from fuelmenu.settings import Settings
 
 
 log = logging.getLogger(__name__)
@@ -53,7 +54,7 @@ class feature_groups(urwid.WidgetWrap):
                 "type": WidgetType.CHECKBOX,
             }
         }
-        self.load()
+        self.oldsettings = self.load()
         self.screen = None
 
     @property
@@ -80,24 +81,34 @@ class feature_groups(urwid.WidgetWrap):
 
     def load(self):
         # Read in yaml
-        oldsettings = self.parent.settings
-
+        defaultsettings = Settings().read(self.parent.defaultsettingsfile)
+        oldsettings = defaultsettings
+        oldsettings.update(Settings().read(self.parent.settingsfile))
         for setting in self.defaults:
             try:
                 part1, part2 = setting.split("/")
                 self.defaults[setting]["value"] = part2 in oldsettings[part1]
             except Exception as e:
                 log.warning("unexpected error: %s", e.message)
+        return oldsettings
 
     def save(self, responses):
         newsettings = {}
-        for setting in responses:
+        for setting in responses.keys():
             part1, part2 = setting.split("/")
             if part1 not in newsettings:
                 newsettings[part1] = []
             if responses[setting]:
                 newsettings[part1].append(part2)
-        self.parent.settings.merge(newsettings)
+
+        Settings().write(newsettings,
+                         defaultsfile=self.parent.defaultsettingsfile,
+                         outfn=self.parent.settingsfile)
+
+        self.oldsettings = newsettings
+        for setting in self.defaults:
+            part1, part2 = setting.split("/")
+            self.defaults[setting]["value"] = part2 in newsettings[part1]
 
     def cancel(self, button):
         ModuleHelper.cancel(self, button)
@@ -107,4 +118,4 @@ class feature_groups(urwid.WidgetWrap):
 
     def screenUI(self):
         return ModuleHelper.screenUI(self, self.header_content, self.fields,
-                                     self.defaults, show_all_buttons=True)
+                                     self.defaults, showallbuttons=True)
